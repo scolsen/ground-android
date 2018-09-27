@@ -83,14 +83,30 @@ public class HomeScreenViewModel extends AbstractViewModel {
   }
 
   private void onPlaceAdded(Place place) {
-    placeSheetState.setValue(PlaceSheetState.visible(
-      place,
-      place.getPlaceType().getForms().size() == 1));
+    placeSheetState.setValue(
+      PlaceSheetState.visible(place, place.getPlaceType().getForms().size() == 1));
   }
 
   public void onAddPlaceBtnClick(Point location) {
     // TODO: Pause location updates while dialog is open.
-    addPlaceDialogRequests.setValue(location);
+    Resource.getData(getActiveProject())
+            .ifPresent(
+              project -> {
+                onAddPlaceBtnClick(project, location);
+              });
+  }
+
+  private void onAddPlaceBtnClick(Project project, Point location) {
+    if (project.getPlaceTypes().size() == 1) {
+      addPlace(
+        Place.newBuilder()
+             .setProject(project)
+             .setPlaceType(project.getPlaceTypes().get(0))
+             .setPoint(location)
+             .build());
+    } else {
+      addPlaceDialogRequests.setValue(location);
+    }
   }
 
   public void addPlace(Place place) {
