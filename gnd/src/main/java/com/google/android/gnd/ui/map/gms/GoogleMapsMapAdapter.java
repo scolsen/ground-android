@@ -17,11 +17,23 @@
 package com.google.android.gnd.ui.map.gms;
 
 import static com.google.android.gms.maps.GoogleMap.OnCameraMoveStartedListener.REASON_DEVELOPER_ANIMATION;
+import static com.google.android.gnd.workers.FileDownloadWorker.CONTENTS;
+import static com.google.android.gnd.workers.FileDownloadWorker.TARGET_URL;
 import static java8.util.stream.StreamSupport.stream;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.os.AsyncTask;
+import android.os.Handler;
 import android.util.Log;
+
+import androidx.lifecycle.LifecycleOwner;
+import androidx.lifecycle.Observer;
+import androidx.work.Data;
+import androidx.work.ExistingWorkPolicy;
+import androidx.work.OneTimeWorkRequest;
+import androidx.work.WorkInfo;
+import androidx.work.WorkManager;
 
 import com.cocoahero.android.gmaps.addons.mapbox.MapBoxOfflineTileProvider;
 import com.google.android.gms.maps.CameraUpdateFactory;
@@ -38,17 +50,35 @@ import com.google.android.gnd.model.layer.FeatureType;
 import com.google.android.gnd.ui.MapIcon;
 import com.google.android.gnd.ui.map.MapMarker;
 import com.google.android.gnd.ui.map.MapProvider.MapAdapter;
+import com.google.android.gnd.workers.FileDownloadWorker;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.maps.android.data.geojson.GeoJsonFeature;
+import com.google.maps.android.data.geojson.GeoJsonLayer;
+import com.google.maps.android.data.geojson.GeoJsonPolygonStyle;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import io.reactivex.Observable;
 import io.reactivex.subjects.BehaviorSubject;
 import io.reactivex.subjects.PublishSubject;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.Executor;
+
 import java8.util.Optional;
 import javax.annotation.Nullable;
 
@@ -61,6 +91,7 @@ class GoogleMapsMapAdapter implements MapAdapter {
   private static final String TAG = GoogleMapsMapAdapter.class.getSimpleName();
   private final GoogleMap map;
   private final Context context;
+  private final WorkManager workManager;
   /**
    * Cache of ids to map markers. We don't mind this being destroyed on lifecycle events since the
    * GoogleMap markers themselves are destroyed as well.
@@ -72,10 +103,14 @@ class GoogleMapsMapAdapter implements MapAdapter {
   private final BehaviorSubject<Point> cameraPositionSubject = BehaviorSubject.create();
 
   @Nullable private LatLng cameraTargetBeforeDrag;
+  private final String GEO_JSON_SOURCE =
+      "https://storage.googleapis.com/ground-offline-imagery-demo/mbtiles/l8/7/20181109-footprints.geojson";
+  private final String GEO_JSON_WORK = "geoJsonWorkRequest";
 
   public GoogleMapsMapAdapter(GoogleMap map, Context context) {
     this.map = map;
     this.context = context;
+    this.workManager = WorkManager.getInstance();
     map.setMapType(GoogleMap.MAP_TYPE_HYBRID);
     UiSettings uiSettings = map.getUiSettings();
     uiSettings.setRotateGesturesEnabled(false);
@@ -140,16 +175,105 @@ class GoogleMapsMapAdapter implements MapAdapter {
     map.moveCamera(CameraUpdateFactory.newLatLngZoom(point.toLatLng(), zoomLevel));
   }
 
-  //TODO: Pass this method as a subscription on `activeTileSet` change.
+  // TODO: Pass this method as a subscription on `activeTileSet` change.
   @Override
   public void renderOfflineTileSet(File file) {
-    if (file.exists()) {
-      TileOverlayOptions options = new TileOverlayOptions();
-      MapBoxOfflineTileProvider tileProvider = new MapBoxOfflineTileProvider(file);
-      options.tileProvider(tileProvider);
-      map.addTileOverlay(options);
+    OneTimeWorkRequest geoJsonRequest =
+        new OneTimeWorkRequest.Builder(FileDownloadWorker.class)
+            .setInputData(createGeoJsonUrlData())
+            .addTag(GEO_JSON_WORK)
+            .build();
+    workManager.beginUniqueWork(GEO_JSON_WORK, ExistingWorkPolicy.KEEP, geoJsonRequest).enqueue();
+    workManager
+        .getWorkInfoByIdLiveData(geoJsonRequest.getId())
+        .observe((LifecycleOwner) this.context, new Observer<WorkInfo>() {
+          @Override
+          public void onChanged(WorkInfo workInfo) {
+            if(workInfo.getState() == WorkInfo.State.SUCCEEDED) {
+              try {
+                JSONObject geoJsonData = new JSONObject(workInfo.getOutputData().getString(CONTENTS));
+                GeoJsonLayer layer = new GeoJsonLayer(map, geoJsonData);
+                layer.setOnFeatureClickListener(feature -> onFeatureClick(feature));
+                layer.addLayerToMap();
+                Log.d(TAG, "JSON successfully loaded.");
+              } catch (JSONException e) {
+                e.printStackTrace();
+              }
+            } else if (workInfo.getState() == WorkInfo.State.FAILED) {
+              Log.d(TAG, "WORKER FAILED>");
+            }
+          }
+        });
+
+    // Handler mainHandler = new Handler(context.getMainLooper());
+    // AsyncTask.execute(() -> {
+    //  try {
+    //    loadGeoJson(mainHandler);
+    //  } catch (IOException e) {
+    //    e.printStackTrace();
+    //  }
+    // });
+    // if (file.exists()) {
+    //  TileOverlayOptions options = new TileOverlayOptions();
+    //  MapBoxOfflineTileProvider tileProvider = new MapBoxOfflineTileProvider(file);
+    //  options.tileProvider(tileProvider);
+    //  map.addTileOverlay(options);
+    // }
+  }
+
+  private void loadGeoJsonLayer(List<WorkInfo> info) {
+
+  }
+
+  private Data createGeoJsonUrlData() {
+    return new Data.Builder().putString(TARGET_URL, GEO_JSON_SOURCE).build();
+  }
+
+  private void onFeatureClick(com.google.maps.android.data.Feature feature) {
+    if (feature instanceof GeoJsonFeature) {
+      Log.d(TAG, "Got JSON feature: " + feature.getId());
     }
   }
+
+  //private void loadGeoJson(Handler handler) throws IOException {
+  //  URL geoJsonSource =
+  //      new URL(
+  //          "https://storage.googleapis.com/ground-offline-imagery-demo/mbtiles/l8/7/20181109-footprints.geojson");
+  //  InputStream is = geoJsonSource.openStream();
+  //  BufferedReader buf = new BufferedReader(new InputStreamReader(is));
+  //  String line = buf.readLine();
+  //  StringBuilder sb = new StringBuilder();
+  //  while (line != null) {
+  //    sb.append(line).append("\n");
+  //    line = buf.readLine();
+  //  }
+  //  handler.post(
+  //      () -> {
+  //        try {
+  //          JSONObject geoJsonData = new JSONObject(sb.toString());
+  //          GeoJsonLayer layer = new GeoJsonLayer(map, geoJsonData);
+  //          layer.setOnFeatureClickListener(this::onFeatureClick);
+  //          layer.addLayerToMap();
+  //          Log.d(TAG, "JSON successfully loaded.");
+  //        } catch (JSONException e) {
+  //          Log.d(TAG, "Couldn't load JSON layer." + e.getMessage());
+  //        }
+  //      });
+  //}
+
+  //private class DownloadGeoJSONTask extends AsyncTask<URL, Void, JSONObject> {
+  //  protected JSONObject doInBackground(URL... url) {
+  //    InputStream is = url[0].openStream();
+  //    BufferedReader buf = new BufferedReader(new InputStreamReader(is));
+  //    String line = buf.readLine();
+  //    StringBuilder sb = new StringBuilder();
+  //    while (line != null) {
+  //      sb.append(line).append("\n");
+  //      line = buf.readLine();
+  //    }
+  //    return new JSONObject(sb.toString());
+  //  }
+  //}
 
   private void addMarker(MapMarker mapMarker, boolean hasPendingWrites, boolean isHighlighted) {
     LatLng position = mapMarker.getPosition().toLatLng();
