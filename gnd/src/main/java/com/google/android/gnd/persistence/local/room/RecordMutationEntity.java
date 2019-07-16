@@ -25,27 +25,36 @@ import androidx.room.Entity;
 import androidx.room.ForeignKey;
 import androidx.room.Index;
 import androidx.room.PrimaryKey;
-import com.google.android.gnd.persistence.shared.RecordMutation;
-import com.google.android.gnd.persistence.shared.ResponseDelta;
+import com.google.android.gnd.model.observation.RecordMutation;
+import com.google.android.gnd.model.observation.ResponseDelta;
 import com.google.auto.value.AutoValue;
 import com.google.auto.value.AutoValue.CopyAnnotations;
 import com.google.common.collect.ImmutableList;
 import org.json.JSONObject;
 
-/**
- * Representation of a {@link com.google.android.gnd.persistence.shared.RecordMutation} in local
- * data store.
- */
+/** Representation of a {@link RecordMutation} in local data store. */
 @AutoValue
 @Entity(
     tableName = "record_mutation",
-    foreignKeys =
-        @ForeignKey(
-            entity = RecordEntity.class,
-            parentColumns = "id",
-            childColumns = "record_id",
-            onDelete = CASCADE),
-    indices = {@Index("record_id")})
+    foreignKeys = {
+      @ForeignKey(
+          entity = FeatureEntity.class,
+          parentColumns = "id",
+          childColumns = "feature_id",
+          onDelete = CASCADE),
+      @ForeignKey(
+          entity = RecordEntity.class,
+          parentColumns = "id",
+          childColumns = "record_id",
+          onDelete = CASCADE)
+    },
+    indices = {
+      @Index("id"),
+      @Index("project_id"),
+      @Index("form_id"),
+      @Index("feature_id"),
+      @Index("record_id")
+    })
 public abstract class RecordMutationEntity {
   @CopyAnnotations
   @PrimaryKey(autoGenerate = true)

@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-package com.google.android.gnd.persistence.shared;
+package com.google.android.gnd.model.feature;
 
 import static com.google.android.gnd.util.ImmutableListCollector.toImmutableList;
 import static java8.util.stream.StreamSupport.stream;
 
-import com.google.android.gnd.vo.Point;
+import com.google.android.gnd.model.Mutation;
 import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableList;
 import java8.util.Optional;
