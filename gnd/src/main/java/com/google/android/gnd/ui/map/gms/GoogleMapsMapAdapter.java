@@ -17,7 +17,6 @@
 package com.google.android.gnd.ui.map.gms;
 
 import static com.google.android.gms.maps.GoogleMap.OnCameraMoveStartedListener.REASON_DEVELOPER_ANIMATION;
-import static com.google.android.gnd.workers.FileDownloadWorker.CONTENTS;
 import static com.google.android.gnd.workers.FileDownloadWorker.TARGET_URL;
 import static com.google.android.gnd.workers.FileDownloadWorker.FILENAME;
 import static java8.util.stream.StreamSupport.stream;
@@ -37,6 +36,7 @@ import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
 
 import com.cocoahero.android.gmaps.addons.mapbox.MapBoxOfflineTileProvider;
+import com.google.android.gms.common.util.IOUtils;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.UiSettings;
@@ -61,6 +61,7 @@ import com.google.maps.android.data.geojson.GeoJsonPolygonStyle;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import io.grpc.internal.IoUtils;
 import io.reactivex.Observable;
 import io.reactivex.subjects.BehaviorSubject;
 import io.reactivex.subjects.PublishSubject;
@@ -68,6 +69,7 @@ import io.reactivex.subjects.PublishSubject;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -189,23 +191,19 @@ class GoogleMapsMapAdapter implements MapAdapter {
         .getWorkInfoByIdLiveData(geoJsonRequest.getId())
         .observe(
             (LifecycleOwner) this.context,
-            new Observer<WorkInfo>() {
-              @Override
-              public void onChanged(WorkInfo workInfo) {
-                if (workInfo.getState() == WorkInfo.State.SUCCEEDED) {
+            workInfo -> {
+              switch (workInfo.getState()) {
+                case SUCCEEDED:
                   try {
-                    JSONObject geoJsonData =
-                        new JSONObject(workInfo.getOutputData().getString(FILENAME));
-                    GeoJsonLayer layer = new GeoJsonLayer(map, geoJsonData);
-                    layer.setOnFeatureClickListener(feature -> onFeatureClick(feature));
-                    layer.addLayerToMap();
-                    Log.d(TAG, "JSON successfully loaded.");
-                  } catch (JSONException e) {
+                    Log.d(TAG, "WORKER OUTPUT: " + workInfo.getOutputData().getString(FILENAME));
+                    loadGeoJsonLayer(workInfo.getOutputData().getString(FILENAME));
+                  } catch (FileNotFoundException e) {
                     e.printStackTrace();
                   }
-                } else if (workInfo.getState() == WorkInfo.State.FAILED) {
+                case FAILED:
                   Log.d(TAG, "WORKER FAILED");
-                }
+                default:
+                  Log.d(TAG, "WORKER IN PROGRESS");
               }
             });
 
@@ -225,12 +223,38 @@ class GoogleMapsMapAdapter implements MapAdapter {
     // }
   }
 
-  private void loadGeoJsonLayer(List<WorkInfo> info) {}
+  private void loadGeoJsonLayer(String filename) throws FileNotFoundException {
+    File file = new File(context.getFilesDir(), filename);
+    if (file.exists()) {
+      try {
+        InputStream is = new FileInputStream(file);
+        BufferedReader buf = new BufferedReader(new InputStreamReader(is));
+        String line = buf.readLine();
+        StringBuilder sb = new StringBuilder();
+        while (line != null) {
+          sb.append(line).append("\n");
+          line = buf.readLine();
+        }
+        try {
+          JSONObject geoJson = new JSONObject(sb.toString());
+          GeoJsonLayer layer = new GeoJsonLayer(map, geoJson);
+          layer.setOnFeatureClickListener(this::onFeatureClick);
+          layer.addLayerToMap();
+          Log.d(TAG, "JSON successfully loaded.");
+        } catch (JSONException e) {
+          Log.d(TAG, "Unable to read JSON.");
+          e.printStackTrace();
+        }
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+    }
+  }
 
   private Data createGeoJsonData() {
     return new Data.Builder()
         .putString(TARGET_URL, GEO_JSON_SOURCE)
-        .putString(FILENAME, context.getFilesDir().getAbsolutePath() + "/geojson.geojson")
+        .putString(FILENAME, "geojson.geojson")
         .build();
   }
 
