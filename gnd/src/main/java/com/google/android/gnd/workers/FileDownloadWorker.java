@@ -36,7 +36,7 @@ import java.net.URL;
  */
 public class FileDownloadWorker extends Worker {
   private static final String TARGET_URL = "url";
-  private static final String FILENAME = "filename";
+  public static final String FILENAME = "filename";
   private final Context context;
 
   public FileDownloadWorker(@NonNull Context context, @NonNull WorkerParameters params) {
