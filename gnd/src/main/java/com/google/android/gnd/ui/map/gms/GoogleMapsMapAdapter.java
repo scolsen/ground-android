@@ -19,6 +19,7 @@ package com.google.android.gnd.ui.map.gms;
 import static com.google.android.gms.maps.GoogleMap.OnCameraMoveStartedListener.REASON_DEVELOPER_ANIMATION;
 import static com.google.android.gnd.workers.FileDownloadWorker.CONTENTS;
 import static com.google.android.gnd.workers.FileDownloadWorker.TARGET_URL;
+import static com.google.android.gnd.workers.FileDownloadWorker.FILENAME;
 import static java8.util.stream.StreamSupport.stream;
 
 import android.annotation.SuppressLint;
@@ -180,30 +181,33 @@ class GoogleMapsMapAdapter implements MapAdapter {
   public void renderOfflineTileSet(File file) {
     OneTimeWorkRequest geoJsonRequest =
         new OneTimeWorkRequest.Builder(FileDownloadWorker.class)
-            .setInputData(createGeoJsonUrlData())
+            .setInputData(createGeoJsonData())
             .addTag(GEO_JSON_WORK)
             .build();
     workManager.beginUniqueWork(GEO_JSON_WORK, ExistingWorkPolicy.KEEP, geoJsonRequest).enqueue();
     workManager
         .getWorkInfoByIdLiveData(geoJsonRequest.getId())
-        .observe((LifecycleOwner) this.context, new Observer<WorkInfo>() {
-          @Override
-          public void onChanged(WorkInfo workInfo) {
-            if(workInfo.getState() == WorkInfo.State.SUCCEEDED) {
-              try {
-                JSONObject geoJsonData = new JSONObject(workInfo.getOutputData().getString(CONTENTS));
-                GeoJsonLayer layer = new GeoJsonLayer(map, geoJsonData);
-                layer.setOnFeatureClickListener(feature -> onFeatureClick(feature));
-                layer.addLayerToMap();
-                Log.d(TAG, "JSON successfully loaded.");
-              } catch (JSONException e) {
-                e.printStackTrace();
+        .observe(
+            (LifecycleOwner) this.context,
+            new Observer<WorkInfo>() {
+              @Override
+              public void onChanged(WorkInfo workInfo) {
+                if (workInfo.getState() == WorkInfo.State.SUCCEEDED) {
+                  try {
+                    JSONObject geoJsonData =
+                        new JSONObject(workInfo.getOutputData().getString(FILENAME));
+                    GeoJsonLayer layer = new GeoJsonLayer(map, geoJsonData);
+                    layer.setOnFeatureClickListener(feature -> onFeatureClick(feature));
+                    layer.addLayerToMap();
+                    Log.d(TAG, "JSON successfully loaded.");
+                  } catch (JSONException e) {
+                    e.printStackTrace();
+                  }
+                } else if (workInfo.getState() == WorkInfo.State.FAILED) {
+                  Log.d(TAG, "WORKER FAILED");
+                }
               }
-            } else if (workInfo.getState() == WorkInfo.State.FAILED) {
-              Log.d(TAG, "WORKER FAILED>");
-            }
-          }
-        });
+            });
 
     // Handler mainHandler = new Handler(context.getMainLooper());
     // AsyncTask.execute(() -> {
@@ -221,12 +225,13 @@ class GoogleMapsMapAdapter implements MapAdapter {
     // }
   }
 
-  private void loadGeoJsonLayer(List<WorkInfo> info) {
+  private void loadGeoJsonLayer(List<WorkInfo> info) {}
 
-  }
-
-  private Data createGeoJsonUrlData() {
-    return new Data.Builder().putString(TARGET_URL, GEO_JSON_SOURCE).build();
+  private Data createGeoJsonData() {
+    return new Data.Builder()
+        .putString(TARGET_URL, GEO_JSON_SOURCE)
+        .putString(FILENAME, context.getFilesDir().getAbsolutePath() + "/geojson.geojson")
+        .build();
   }
 
   private void onFeatureClick(com.google.maps.android.data.Feature feature) {
@@ -235,10 +240,11 @@ class GoogleMapsMapAdapter implements MapAdapter {
     }
   }
 
-  //private void loadGeoJson(Handler handler) throws IOException {
+  // private void loadGeoJson(Handler handler) throws IOException {
   //  URL geoJsonSource =
   //      new URL(
-  //          "https://storage.googleapis.com/ground-offline-imagery-demo/mbtiles/l8/7/20181109-footprints.geojson");
+  //
+  // "https://storage.googleapis.com/ground-offline-imagery-demo/mbtiles/l8/7/20181109-footprints.geojson");
   //  InputStream is = geoJsonSource.openStream();
   //  BufferedReader buf = new BufferedReader(new InputStreamReader(is));
   //  String line = buf.readLine();
@@ -259,9 +265,9 @@ class GoogleMapsMapAdapter implements MapAdapter {
   //          Log.d(TAG, "Couldn't load JSON layer." + e.getMessage());
   //        }
   //      });
-  //}
+  // }
 
-  //private class DownloadGeoJSONTask extends AsyncTask<URL, Void, JSONObject> {
+  // private class DownloadGeoJSONTask extends AsyncTask<URL, Void, JSONObject> {
   //  protected JSONObject doInBackground(URL... url) {
   //    InputStream is = url[0].openStream();
   //    BufferedReader buf = new BufferedReader(new InputStreamReader(is));
@@ -273,7 +279,7 @@ class GoogleMapsMapAdapter implements MapAdapter {
   //    }
   //    return new JSONObject(sb.toString());
   //  }
-  //}
+  // }
 
   private void addMarker(MapMarker mapMarker, boolean hasPendingWrites, boolean isHighlighted) {
     LatLng position = mapMarker.getPosition().toLatLng();
