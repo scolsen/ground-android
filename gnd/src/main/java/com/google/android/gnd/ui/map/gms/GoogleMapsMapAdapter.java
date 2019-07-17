@@ -17,11 +17,16 @@
 package com.google.android.gnd.ui.map.gms;
 
 import static com.google.android.gms.maps.GoogleMap.OnCameraMoveStartedListener.REASON_DEVELOPER_ANIMATION;
+import static com.google.android.gnd.workers.FileDownloadWorker.FILENAME;
 import static java8.util.stream.StreamSupport.stream;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.net.Uri;
 import android.util.Log;
+
+import androidx.lifecycle.LifecycleOwner;
+
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.UiSettings;
@@ -35,10 +40,23 @@ import com.google.android.gnd.model.layer.FeatureType;
 import com.google.android.gnd.ui.MapIcon;
 import com.google.android.gnd.ui.map.MapMarker;
 import com.google.android.gnd.ui.map.MapProvider.MapAdapter;
+import com.google.android.gnd.workers.FileDownloadWorkManager;
 import com.google.common.collect.ImmutableSet;
+import com.google.maps.android.data.geojson.GeoJsonLayer;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import io.reactivex.Observable;
 import io.reactivex.subjects.BehaviorSubject;
 import io.reactivex.subjects.PublishSubject;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -54,6 +72,9 @@ import javax.annotation.Nullable;
 class GoogleMapsMapAdapter implements MapAdapter {
 
   private static final String TAG = GoogleMapsMapAdapter.class.getSimpleName();
+  private final String GEO_JSON_SOURCE =
+      "https://storage.googleapis.com/ground-offline-imagery-demo/mbtiles/l8/7/20181109-footprints.geojson";
+  private final String GEO_JSON_FILE = Uri.parse(GEO_JSON_SOURCE).getLastPathSegment();
   private final GoogleMap map;
   private final Context context;
   /**
@@ -66,11 +87,14 @@ class GoogleMapsMapAdapter implements MapAdapter {
   private final PublishSubject<Point> dragInteractionSubject = PublishSubject.create();
   private final BehaviorSubject<Point> cameraPositionSubject = BehaviorSubject.create();
 
+  private final FileDownloadWorkManager fileDownloadWorkManager;
+
   @Nullable private LatLng cameraTargetBeforeDrag;
 
   public GoogleMapsMapAdapter(GoogleMap map, Context context) {
     this.map = map;
     this.context = context;
+    this.fileDownloadWorkManager = new FileDownloadWorkManager();
     map.setMapType(GoogleMap.MAP_TYPE_HYBRID);
     UiSettings uiSettings = map.getUiSettings();
     uiSettings.setRotateGesturesEnabled(false);
@@ -83,7 +107,52 @@ class GoogleMapsMapAdapter implements MapAdapter {
     map.setOnCameraIdleListener(this::onCameraIdle);
     map.setOnCameraMoveStartedListener(this::onCameraMoveStarted);
     map.setOnCameraMoveListener(this::onCameraMove);
+    downloadGeoJson();
     onCameraMove();
+  }
+
+  private void downloadGeoJson() {
+    File geoJsonFile = new File(context.getFilesDir(), GEO_JSON_FILE);
+    if (!geoJsonFile.exists()) {
+      fileDownloadWorkManager
+          .enqueueFileDownloadWorker(GEO_JSON_SOURCE, GEO_JSON_FILE)
+          .observe(
+              (LifecycleOwner) this.context,
+              workInfo -> {
+                switch (workInfo.getState()) {
+                  case SUCCEEDED:
+                    renderGeoJsonLayer(
+                        new File(
+                            context.getFilesDir(), workInfo.getOutputData().getString(FILENAME)));
+                  case FAILED:
+                    Log.d(TAG, "Downloading geojson file failed.");
+                  default:
+                    Log.d(TAG, "Downloading geojson file.");
+                }
+              });
+    } else {
+      renderGeoJsonLayer(geoJsonFile);
+    }
+  }
+
+  private void renderGeoJsonLayer(File geoJsonFile) {
+    try {
+      InputStream is = new FileInputStream(geoJsonFile);
+      BufferedReader buf = new BufferedReader(new InputStreamReader(is));
+      String line = buf.readLine();
+      StringBuilder sb = new StringBuilder();
+      while (line != null) {
+        sb.append(line).append("\n");
+        line = buf.readLine();
+      }
+
+      JSONObject geoJson = new JSONObject(sb.toString());
+      GeoJsonLayer layer = new GeoJsonLayer(map, geoJson);
+      layer.addLayerToMap();
+    } catch (IOException | JSONException e) {
+      Log.d(TAG, "Unable to render geoJson: " + e.getMessage());
+      e.printStackTrace();
+    }
   }
 
   private boolean onMarkerClick(Marker marker) {
