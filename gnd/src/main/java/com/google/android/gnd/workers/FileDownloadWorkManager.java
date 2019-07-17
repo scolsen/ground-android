@@ -27,8 +27,6 @@ import androidx.work.WorkManager;
 
 import java.util.concurrent.TimeUnit;
 
-import javax.inject.Provider;
-
 /** Enqueues data sync work to be done in the background. */
 public class FileDownloadWorkManager {
   /** Number of seconds to wait before retrying failed sync tasks. */
