@@ -18,7 +18,9 @@ package com.google.android.gnd.ui.map.gms;
 
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
+
 import com.google.android.gnd.ui.map.MapProvider;
+
 import io.reactivex.Single;
 import io.reactivex.subjects.SingleSubject;
 
@@ -44,7 +46,11 @@ public class GoogleMapsMapProvider implements MapProvider {
   private void createMapAsync() {
     ((GoogleMapsFragment) getFragment())
         .getMapAsync(
-            googleMap -> map.onSuccess(new GoogleMapsMapAdapter(googleMap, fragment.getContext())));
+            googleMap ->
+                map.onSuccess(
+                    new GoogleMapsMapAdapter(
+                        googleMap,
+                        fragment.getContext())));
   }
 
   @Override

@@ -17,18 +17,17 @@
 package com.google.android.gnd.ui.map.gms;
 
 import static com.google.android.gms.maps.GoogleMap.OnCameraMoveStartedListener.REASON_DEVELOPER_ANIMATION;
-import static com.google.android.gnd.workers.FileDownloadWorker.TARGET_URL;
 import static com.google.android.gnd.workers.FileDownloadWorker.FILENAME;
 import static java8.util.stream.StreamSupport.stream;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.os.AsyncTask;
-import android.os.Handler;
+import android.net.Uri;
 import android.util.Log;
 
 import androidx.lifecycle.LifecycleOwner;
 import androidx.lifecycle.Observer;
+import androidx.room.Insert;
 import androidx.work.Data;
 import androidx.work.ExistingWorkPolicy;
 import androidx.work.OneTimeWorkRequest;
@@ -51,6 +50,7 @@ import com.google.android.gnd.model.layer.FeatureType;
 import com.google.android.gnd.ui.MapIcon;
 import com.google.android.gnd.ui.map.MapMarker;
 import com.google.android.gnd.ui.map.MapProvider.MapAdapter;
+import com.google.android.gnd.workers.FileDownloadWorkManager;
 import com.google.android.gnd.workers.FileDownloadWorker;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -61,7 +61,6 @@ import com.google.maps.android.data.geojson.GeoJsonPolygonStyle;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import io.grpc.internal.IoUtils;
 import io.reactivex.Observable;
 import io.reactivex.subjects.BehaviorSubject;
 import io.reactivex.subjects.PublishSubject;
@@ -73,17 +72,15 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.URL;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.concurrent.Executor;
 
 import java8.util.Optional;
 import javax.annotation.Nullable;
+import javax.inject.Inject;
 
 /**
  * Wrapper around {@link GoogleMap}, exposing Google Maps API functionality to Ground as a {@link
@@ -92,9 +89,10 @@ import javax.annotation.Nullable;
 class GoogleMapsMapAdapter implements MapAdapter {
 
   private static final String TAG = GoogleMapsMapAdapter.class.getSimpleName();
+  private final FileDownloadWorkManager workManager;
   private final GoogleMap map;
   private final Context context;
-  private final WorkManager workManager;
+  private final File geoJsonFile;
   /**
    * Cache of ids to map markers. We don't mind this being destroyed on lifecycle events since the
    * GoogleMap markers themselves are destroyed as well.
@@ -108,12 +106,15 @@ class GoogleMapsMapAdapter implements MapAdapter {
   @Nullable private LatLng cameraTargetBeforeDrag;
   private final String GEO_JSON_SOURCE =
       "https://storage.googleapis.com/ground-offline-imagery-demo/mbtiles/l8/7/20181109-footprints.geojson";
-  private final String GEO_JSON_WORK = "geoJsonWorkRequest";
+  private final String GEO_JSON_FILE = Uri.parse(GEO_JSON_SOURCE).getLastPathSegment();
 
-  public GoogleMapsMapAdapter(GoogleMap map, Context context) {
+  public GoogleMapsMapAdapter(
+      GoogleMap map, Context context) {
     this.map = map;
     this.context = context;
-    this.workManager = WorkManager.getInstance();
+    this.geoJsonFile = new File(context.getFilesDir(), GEO_JSON_FILE);
+    this.workManager = new FileDownloadWorkManager();
+
     map.setMapType(GoogleMap.MAP_TYPE_HYBRID);
     UiSettings uiSettings = map.getUiSettings();
     uiSettings.setRotateGesturesEnabled(false);
@@ -126,9 +127,12 @@ class GoogleMapsMapAdapter implements MapAdapter {
     map.setOnCameraIdleListener(this::onCameraIdle);
     map.setOnCameraMoveStartedListener(this::onCameraMoveStarted);
     map.setOnCameraMoveListener(this::onCameraMove);
-    // TODO: Use an `activeTileSet` from the view model.
-    renderOfflineTileSet(
-        new File(context.getFilesDir().getAbsolutePath() + "/countries-raster.mbtiles"));
+    if (!geoJsonFile.exists()) {
+      downloadGeoJson();
+    }
+
+    // renderOfflineTileSet(
+    // new File(context.getFilesDir().getAbsolutePath() + "/countries-raster.mbtiles"));
     onCameraMove();
   }
 
@@ -178,17 +182,14 @@ class GoogleMapsMapAdapter implements MapAdapter {
     map.moveCamera(CameraUpdateFactory.newLatLngZoom(point.toLatLng(), zoomLevel));
   }
 
-  // TODO: Pass this method as a subscription on `activeTileSet` change.
   @Override
   public void renderOfflineTileSet(File file) {
-    OneTimeWorkRequest geoJsonRequest =
-        new OneTimeWorkRequest.Builder(FileDownloadWorker.class)
-            .setInputData(createGeoJsonData())
-            .addTag(GEO_JSON_WORK)
-            .build();
-    workManager.beginUniqueWork(GEO_JSON_WORK, ExistingWorkPolicy.KEEP, geoJsonRequest).enqueue();
+    // Render tile sets.
+  }
+
+  public void downloadGeoJson() {
     workManager
-        .getWorkInfoByIdLiveData(geoJsonRequest.getId())
+        .enqueueFileDownloadWorker(GEO_JSON_SOURCE, GEO_JSON_FILE)
         .observe(
             (LifecycleOwner) this.context,
             workInfo -> {
@@ -206,21 +207,6 @@ class GoogleMapsMapAdapter implements MapAdapter {
                   Log.d(TAG, "WORKER IN PROGRESS");
               }
             });
-
-    // Handler mainHandler = new Handler(context.getMainLooper());
-    // AsyncTask.execute(() -> {
-    //  try {
-    //    loadGeoJson(mainHandler);
-    //  } catch (IOException e) {
-    //    e.printStackTrace();
-    //  }
-    // });
-    // if (file.exists()) {
-    //  TileOverlayOptions options = new TileOverlayOptions();
-    //  MapBoxOfflineTileProvider tileProvider = new MapBoxOfflineTileProvider(file);
-    //  options.tileProvider(tileProvider);
-    //  map.addTileOverlay(options);
-    // }
   }
 
   private void loadGeoJsonLayer(String filename) throws FileNotFoundException {
@@ -251,59 +237,11 @@ class GoogleMapsMapAdapter implements MapAdapter {
     }
   }
 
-  private Data createGeoJsonData() {
-    return new Data.Builder()
-        .putString(TARGET_URL, GEO_JSON_SOURCE)
-        .putString(FILENAME, "geojson.geojson")
-        .build();
-  }
-
   private void onFeatureClick(com.google.maps.android.data.Feature feature) {
     if (feature instanceof GeoJsonFeature) {
       Log.d(TAG, "Got JSON feature: " + feature.getId());
     }
   }
-
-  // private void loadGeoJson(Handler handler) throws IOException {
-  //  URL geoJsonSource =
-  //      new URL(
-  //
-  // "https://storage.googleapis.com/ground-offline-imagery-demo/mbtiles/l8/7/20181109-footprints.geojson");
-  //  InputStream is = geoJsonSource.openStream();
-  //  BufferedReader buf = new BufferedReader(new InputStreamReader(is));
-  //  String line = buf.readLine();
-  //  StringBuilder sb = new StringBuilder();
-  //  while (line != null) {
-  //    sb.append(line).append("\n");
-  //    line = buf.readLine();
-  //  }
-  //  handler.post(
-  //      () -> {
-  //        try {
-  //          JSONObject geoJsonData = new JSONObject(sb.toString());
-  //          GeoJsonLayer layer = new GeoJsonLayer(map, geoJsonData);
-  //          layer.setOnFeatureClickListener(this::onFeatureClick);
-  //          layer.addLayerToMap();
-  //          Log.d(TAG, "JSON successfully loaded.");
-  //        } catch (JSONException e) {
-  //          Log.d(TAG, "Couldn't load JSON layer." + e.getMessage());
-  //        }
-  //      });
-  // }
-
-  // private class DownloadGeoJSONTask extends AsyncTask<URL, Void, JSONObject> {
-  //  protected JSONObject doInBackground(URL... url) {
-  //    InputStream is = url[0].openStream();
-  //    BufferedReader buf = new BufferedReader(new InputStreamReader(is));
-  //    String line = buf.readLine();
-  //    StringBuilder sb = new StringBuilder();
-  //    while (line != null) {
-  //      sb.append(line).append("\n");
-  //      line = buf.readLine();
-  //    }
-  //    return new JSONObject(sb.toString());
-  //  }
-  // }
 
   private void addMarker(MapMarker mapMarker, boolean hasPendingWrites, boolean isHighlighted) {
     LatLng position = mapMarker.getPosition().toLatLng();

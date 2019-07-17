@@ -15,6 +15,12 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URL;
 
+/**
+ * A worker that downloads files to the device in the background. The target URL and file name are
+ * provided in a {@link Data} object. This worker can only run if the device has a network
+ * connection.
+ */
+// TODO: Add a network connection constraint.
 public class FileDownloadWorker extends Worker {
   public static final String TARGET_URL = "url";
   public static final String FILENAME = "filename";
@@ -27,10 +33,16 @@ public class FileDownloadWorker extends Worker {
 
   private static final String TAG = FileDownloadWorker.class.getSimpleName();
 
+  public static Data createInputData(String url, String filename) {
+    return new Data.Builder().putString(TARGET_URL, url).putString(FILENAME, filename).build();
+  }
+
   @NonNull
   @Override
   public Result doWork() {
     String url = getInputData().getString(TARGET_URL);
+    // TODO: If the filename is no good, produce an alternative.
+    // Or fail.
     String filename = getInputData().getString(FILENAME);
 
     try {
