@@ -16,12 +16,10 @@
 
 package com.google.android.gnd.workers;
 
-import androidx.lifecycle.LiveData;
 import androidx.work.Constraints;
 import androidx.work.ExistingWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
-import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
 
 import io.reactivex.Completable;
@@ -40,12 +38,12 @@ public class FileDownloadWorkManager {
    * Enqueues a worker that downloads files when a network connection is available, returning a
    * completeable upon enqueueing.
    */
-  public Completable enqueueFileDownloadWorker(String url, String filename) {
-    return Completable.fromRunnable(() -> enqueueFileDownloadWorkerInternal(url, filename));
+  public Completable enqueueFileDownloadWorker(String tileId) {
+    return Completable.fromRunnable(() -> enqueueFileDownloadWorkerInternal(tileId));
   }
 
-  private void enqueueFileDownloadWorkerInternal(String url, String filename) {
-    OneTimeWorkRequest request = buildWorkerRequest(url, filename);
+  private void enqueueFileDownloadWorkerInternal(String tileId) {
+    OneTimeWorkRequest request = buildWorkerRequest(tileId);
 
     getWorkManager()
         .enqueueUniqueWork(FileDownloadWorker.class.getName(), ExistingWorkPolicy.APPEND, request);
@@ -55,10 +53,10 @@ public class FileDownloadWorkManager {
     return workManager;
   }
 
-  private OneTimeWorkRequest buildWorkerRequest(String url, String filename) {
+  private OneTimeWorkRequest buildWorkerRequest(String tileId) {
     return new OneTimeWorkRequest.Builder(FileDownloadWorker.class)
         .setConstraints(CONSTRAINTS)
-        .setInputData(FileDownloadWorker.createInputData(url, filename))
+        .setInputData(FileDownloadWorker.createInputData(tileId))
         .build();
   }
 }

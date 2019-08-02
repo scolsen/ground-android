@@ -24,9 +24,14 @@ import androidx.work.Data;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 
+import com.google.android.gnd.model.basemap.tile.Tile;
+import com.google.android.gnd.persistence.local.LocalDataStore;
+
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.URL;
 
 /**
@@ -35,21 +40,99 @@ import java.net.URL;
  * connection.
  */
 public class FileDownloadWorker extends Worker {
-  private static final String TARGET_URL = "url";
-  private static final String FILENAME = "filename";
+  private static final String TILE_ID = "tile_id";
   private static final int BUFFER_SIZE = 4096;
   private final Context context;
+  private final LocalDataStore localDataStore;
 
-  public FileDownloadWorker(@NonNull Context context, @NonNull WorkerParameters params) {
+  public FileDownloadWorker(
+      @NonNull Context context, @NonNull WorkerParameters params, LocalDataStore localDataStore) {
     super(context, params);
     this.context = context;
+    this.localDataStore = localDataStore;
   }
 
   private static final String TAG = FileDownloadWorker.class.getSimpleName();
 
   /** Creates input data for the FileDownloadWorker. */
-  public static Data createInputData(String url, String filename) {
-    return new Data.Builder().putString(TARGET_URL, url).putString(FILENAME, filename).build();
+  public static Data createInputData(String tilePrimaryKey) {
+    return new Data.Builder().putString(TILE_ID, tilePrimaryKey).build();
+  }
+
+  private Result downloadTile(Tile tile) {
+    localDataStore.insertOrUpdateTile(
+        Tile.newBuilder()
+            .setId(tile.getId())
+            .setState(Tile.State.IN_PROGRESS)
+            .setPath(tile.getPath())
+            .setUrl(tile.getUrl())
+            .build());
+    try {
+      InputStream is = new URL(tile.getUrl()).openStream();
+      FileOutputStream fos = context.openFileOutput(tile.getPath(), Context.MODE_PRIVATE);
+      byte[] byteChunk = new byte[BUFFER_SIZE];
+      int n;
+      while ((n = is.read(byteChunk)) > 0) {
+        fos.write(byteChunk, 0, n);
+      }
+      is.close();
+      fos.close();
+      localDataStore.insertOrUpdateTile(
+          Tile.newBuilder()
+              .setId(tile.getId())
+              .setState(Tile.State.DOWNLOADED)
+              .setPath(tile.getPath())
+              .setUrl(tile.getUrl())
+              .build());
+      return Result.success();
+    } catch (IOException e) {
+      Log.d(TAG, "Failed to download and write file.", e);
+      localDataStore.insertOrUpdateTile(
+          Tile.newBuilder()
+              .setId(tile.getId())
+              .setState(Tile.State.FAILED)
+              .setPath(tile.getPath())
+              .setUrl(tile.getUrl())
+              .build());
+      return Result.failure();
+    }
+  }
+
+  private Result resumeTileDownload(Tile tile) {
+    try {
+      File existingTileFile = new File(context.getFilesDir(), tile.getPath());
+      URL url = new URL(tile.getUrl());
+      HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+      connection.setRequestProperty("Range", existingTileFile.length() + "-");
+      connection.connect();
+      InputStream is = connection.getInputStream();
+      FileOutputStream fos = new FileOutputStream(existingTileFile);
+      byte[] byteChunk = new byte[BUFFER_SIZE];
+      int n;
+      while ((n = is.read(byteChunk)) > 0) {
+        fos.write(byteChunk, 0, n);
+      }
+      is.close();
+      fos.close();
+      localDataStore.insertOrUpdateTile(
+          Tile.newBuilder()
+              .setId(tile.getId())
+              .setState(Tile.State.DOWNLOADED)
+              .setPath(tile.getPath())
+              .setUrl(tile.getUrl())
+              .build());
+      return Result.success();
+    } catch (IOException e) {
+      Log.d(TAG, "Failed to download and write file.", e);
+      localDataStore.insertOrUpdateTile(
+          Tile.newBuilder()
+              .setId(tile.getId())
+              .setState(Tile.State.FAILED)
+              .setPath(tile.getPath())
+              .setUrl(tile.getUrl())
+              .build());
+      return Result.failure();
+    }
   }
 
   /**
@@ -60,25 +143,18 @@ public class FileDownloadWorker extends Worker {
   @NonNull
   @Override
   public Result doWork() {
-    //TODO: Once the file is downloaded, update local storage appropriately.
-    String url = getInputData().getString(TARGET_URL);
-    // TODO: If the filename is no good, fail.
-    String filename = getInputData().getString(FILENAME);
+    Tile tile = localDataStore.getTile(TILE_ID).blockingGet();
 
-    try {
-      InputStream is = new URL(url).openStream();
-      FileOutputStream fos = context.openFileOutput(filename, Context.MODE_PRIVATE);
-      byte[] byteChunk = new byte[BUFFER_SIZE];
-      int n;
-      while ((n = is.read(byteChunk)) > 0) {
-        fos.write(byteChunk, 0, n);
-      }
-      is.close();
-      fos.close();
-      return Result.success();
-    } catch (IOException e) {
-      Log.d(TAG, "Failed to download and write file.", e);
+    switch (tile.getState()) {
+      case DOWNLOADED:
+        return Result.success();
+      case PENDING:
+        return downloadTile(tile);
+      case FAILED:
+      case IN_PROGRESS:
+        return resumeTileDownload(tile);
+      default:
+        return Result.failure();
     }
-    return Result.failure();
   }
 }
