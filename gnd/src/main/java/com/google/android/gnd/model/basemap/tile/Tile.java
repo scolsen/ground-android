@@ -13,6 +13,7 @@ public abstract class Tile {
 
     public abstract String getId();
     public abstract String getPath();
+    public abstract String getUrl();
     public abstract State getState();
 
     public static Builder newBuilder() {return new AutoValue_Tile.Builder();}
@@ -21,6 +22,7 @@ public abstract class Tile {
     public abstract static class Builder {
         public abstract Builder setId(String id);
         public abstract Builder setPath(String path);
+        public abstract Builder setUrl(String url);
         public abstract Builder setState(State state);
 
         public abstract Tile build();

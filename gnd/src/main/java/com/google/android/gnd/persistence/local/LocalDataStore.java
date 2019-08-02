@@ -16,12 +16,16 @@
 
 package com.google.android.gnd.persistence.local;
 
+import android.app.VoiceInteractor;
+
 import com.google.android.gnd.model.Mutation;
 import com.google.android.gnd.model.Project;
+import com.google.android.gnd.model.basemap.tile.Tile;
 import com.google.android.gnd.model.feature.Feature;
 import com.google.android.gnd.model.feature.FeatureMutation;
 import com.google.android.gnd.model.observation.Record;
 import com.google.android.gnd.model.observation.RecordMutation;
+import com.google.android.gnd.persistence.local.room.TileEntity;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import io.reactivex.Completable;
@@ -72,6 +76,11 @@ public interface LocalDataStore {
 
   /** Returns the record with the specified UUID from the local data store, if found. */
   Maybe<Record> getRecord(Feature feature, String recordId);
+
+  /** Returns the tile with the specified ID form the local data store, if found.*/
+  Maybe<Tile> getTile(String tileId);
+
+  Completable insertOrUpdateTile(Tile tile);
 
   /**
    * Returns all feature and record mutations in the local mutation queue relating to feature with

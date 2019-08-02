@@ -26,6 +26,7 @@ import androidx.room.Transaction;
 import com.google.android.gnd.GndApplication;
 import com.google.android.gnd.model.Mutation;
 import com.google.android.gnd.model.Project;
+import com.google.android.gnd.model.basemap.tile.Tile;
 import com.google.android.gnd.model.feature.Feature;
 import com.google.android.gnd.model.feature.FeatureMutation;
 import com.google.android.gnd.model.observation.Record;
@@ -94,6 +95,16 @@ public class RoomLocalDataStore implements LocalDataStore {
   @Override
   public Maybe<Record> getRecord(Feature feature, String recordId) {
     return db.recordDao().findById(recordId).map(record -> RecordEntity.toRecord(feature, record));
+  }
+
+  @Override
+  public Maybe<Tile> getTile(String tileId) {
+    return db.tileDao().findById(tileId).map(tileEntity -> TileEntity.toTile(tileEntity));
+  }
+
+  @Override
+  public Completable insertOrUpdateTile(Tile tile) {
+    return db.tileDao().insertOrUpdate(TileEntity.fromTile(tile));
   }
 
   @Override

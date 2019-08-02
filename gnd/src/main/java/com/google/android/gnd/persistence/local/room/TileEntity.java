@@ -9,6 +9,8 @@ import com.google.android.gnd.model.basemap.tile.Tile;
 import com.google.auto.value.AutoValue;
 import com.google.auto.value.AutoValue.CopyAnnotations;
 
+import java.net.URL;
+
 @AutoValue
 @Entity(tableName = "tile")
 public abstract class TileEntity {
@@ -25,6 +27,11 @@ public abstract class TileEntity {
 
   @CopyAnnotations
   @NonNull
+  @ColumnInfo(name = "url")
+  public abstract String getUrl();
+
+  @CopyAnnotations
+  @NonNull
   @ColumnInfo(name = "state")
   public abstract TileEntityState getState();
 
@@ -33,6 +40,7 @@ public abstract class TileEntity {
         Tile.newBuilder()
             .setId(tileEntity.getId())
             .setPath(tileEntity.getPath())
+            .setUrl(tileEntity.getUrl())
             .setState(toTileState(tileEntity.getState()));
     return tile.build();
   }
@@ -57,6 +65,7 @@ public abstract class TileEntity {
         TileEntity.builder()
             .setId(tile.getId())
             .setPath(tile.getPath())
+            .setUrl(tile.getUrl())
             .setState(toEntityState(tile.getState()));
     return entity.build();
   }
@@ -76,8 +85,8 @@ public abstract class TileEntity {
     }
   }
 
-  public static TileEntity create(String id, String path, TileEntityState state) {
-    return builder().setId(id).setState(state).setPath(path).build();
+  public static TileEntity create(String id, String path, String url, TileEntityState state) {
+    return builder().setId(id).setState(state).setPath(path).setUrl(url).build();
   }
 
   public static Builder builder() {
@@ -89,6 +98,8 @@ public abstract class TileEntity {
     public abstract Builder setId(String newId);
 
     public abstract Builder setPath(String newPath);
+
+    public abstract Builder setUrl(String url);
 
     public abstract Builder setState(TileEntityState newState);
 
