@@ -19,6 +19,7 @@ package com.google.android.gnd.repository;
 import android.util.Log;
 import com.google.android.gnd.model.Mutation;
 import com.google.android.gnd.model.Project;
+import com.google.android.gnd.model.basemap.tile.Tile;
 import com.google.android.gnd.model.feature.Feature;
 import com.google.android.gnd.model.feature.FeatureMutation;
 import com.google.android.gnd.model.observation.Record;
@@ -317,5 +318,9 @@ public class DataRepository {
     cache.clearActiveProject();
     localValueStore.clearLastActiveProjectId();
     activeProject.onNext(Persistable.notLoaded());
+  }
+
+  public Flowable<ImmutableSet<Tile>> getTilesOnceAndStream() {
+    return localDataStore.getTilesOnceAndStream();
   }
 }
