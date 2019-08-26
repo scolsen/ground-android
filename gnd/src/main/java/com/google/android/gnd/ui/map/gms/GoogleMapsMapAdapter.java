@@ -22,6 +22,8 @@ import static java8.util.stream.StreamSupport.stream;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.util.Log;
+import android.util.Pair;
+
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.UiSettings;
@@ -35,7 +37,9 @@ import com.google.android.gnd.model.layer.FeatureType;
 import com.google.android.gnd.ui.MapIcon;
 import com.google.android.gnd.ui.map.MapMarker;
 import com.google.android.gnd.ui.map.MapProvider.MapAdapter;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.maps.android.data.geojson.GeoJsonFeature;
 import com.google.maps.android.data.geojson.GeoJsonLayer;
 
 import org.json.JSONException;
@@ -69,15 +73,20 @@ class GoogleMapsMapAdapter implements MapAdapter {
   private static final String GEO_JSON_FILE = "gnd-geojson.geojson";
   private final GoogleMap map;
   private final Context context;
+  private GeoJsonLayer jsonLayer;
   /**
    * Cache of ids to map markers. We don't mind this being destroyed on lifecycle events since the
    * GoogleMap markers themselves are destroyed as well.
    */
   private java.util.Map<String, Marker> markers = new HashMap<>();
 
+  private java.util.Set<GeoJsonFeature> selectedJsonFeatures = new HashSet<>();
+
   private final PublishSubject<MapMarker> markerClickSubject = PublishSubject.create();
   private final PublishSubject<Point> dragInteractionSubject = PublishSubject.create();
   private final BehaviorSubject<Point> cameraPositionSubject = BehaviorSubject.create();
+  private final PublishSubject<Pair<String, GeoJsonSelectionState>> selectedJsonFeaturesSubject =
+      PublishSubject.create();
 
   @Nullable private LatLng cameraTargetBeforeDrag;
 
@@ -99,26 +108,63 @@ class GoogleMapsMapAdapter implements MapAdapter {
     onCameraMove();
   }
 
+  // TODO: Rename to reference tile extents?
   public void renderJsonLayer() {
     File file = new File(context.getFilesDir(), GEO_JSON_FILE);
 
     try {
-        InputStream is = new FileInputStream(file);
-        BufferedReader buf = new BufferedReader(new InputStreamReader(is));
-        String line = buf.readLine();
-        StringBuilder sb = new StringBuilder();
-        while (line != null) {
-          sb.append(line).append("\n");
-          line = buf.readLine();
-        }
+      InputStream is = new FileInputStream(file);
+      BufferedReader buf = new BufferedReader(new InputStreamReader(is));
+      String line = buf.readLine();
+      StringBuilder sb = new StringBuilder();
+      while (line != null) {
+        sb.append(line).append("\n");
+        line = buf.readLine();
+      }
 
-        JSONObject geoJson = new JSONObject(sb.toString());
-        GeoJsonLayer layer = new GeoJsonLayer(map, geoJson);
-        layer.addLayerToMap();
-        Log.d(TAG, "JSON layer successfully loaded");
+      JSONObject geoJson = new JSONObject(sb.toString());
+      this.jsonLayer = new GeoJsonLayer(map, geoJson);
+      jsonLayer.addLayerToMap();
+      jsonLayer.setOnFeatureClickListener(this::onJsonFeatureClick);
+      Log.d(TAG, "JSON layer successfully loaded");
 
     } catch (IOException | JSONException e) {
-        Log.e(TAG, "Unable to load JSON layer", e);
+      Log.e(TAG, "Unable to load JSON layer", e);
+    }
+  }
+
+  private void onJsonFeatureClick(com.google.maps.android.data.Feature feature) {
+    GeoJsonFeature geoJsonFeature = (GeoJsonFeature) feature;
+
+    if (selectedJsonFeatures.contains(geoJsonFeature)) {
+      // TODO: Update feature polygon styles.
+      selectedJsonFeatures.add(geoJsonFeature);
+      selectedJsonFeaturesSubject.onNext(
+          Pair.create(geoJsonFeature.getId(), GeoJsonSelectionState.UNSELECTED));
+    } else {
+      // TODO: Update feature polygon styles.
+      selectedJsonFeatures.remove(geoJsonFeature);
+      selectedJsonFeaturesSubject.onNext(
+          Pair.create(geoJsonFeature.getId(), GeoJsonSelectionState.SELECTED));
+    }
+  }
+
+  @Override
+  public void updateJsonSelections(ImmutableSet<String> featureUpdates, GeoJsonSelectionState selectionState) {
+    Iterable<GeoJsonFeature> features = this.jsonLayer.getFeatures();
+
+    for (GeoJsonFeature feature : features) {
+      if (featureUpdates.contains(feature.getId())) {
+        // TODO: Update polygon styles for downloaded tiles
+        switch (selectionState) {
+          case SELECTED:
+            selectedJsonFeatures.add(feature);
+          case UNSELECTED:
+            selectedJsonFeatures.remove(feature);
+          default:
+            selectedJsonFeatures.add(feature);
+        }
+      }
     }
   }
 
@@ -146,6 +192,11 @@ class GoogleMapsMapAdapter implements MapAdapter {
   @Override
   public Observable<Point> getCameraPosition() {
     return cameraPositionSubject;
+  }
+
+  @Override
+  public Observable<Pair<String, GeoJsonSelectionState>> getGeoJsonFeatureClicks() {
+    return selectedJsonFeaturesSubject;
   }
 
   @Override

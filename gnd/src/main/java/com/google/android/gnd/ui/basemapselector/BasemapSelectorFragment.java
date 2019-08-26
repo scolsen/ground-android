@@ -14,19 +14,23 @@ import com.google.android.gnd.MainViewModel;
 import com.google.android.gnd.R;
 import com.google.android.gnd.databinding.BasemapSelectorFragBinding;
 import com.google.android.gnd.inject.ActivityScoped;
+import com.google.android.gnd.model.basemap.tile.Tile;
 import com.google.android.gnd.ui.common.AbstractFragment;
 import com.google.android.gnd.ui.map.MapProvider;
 import com.google.android.gnd.ui.map.MapProvider.MapAdapter;
+import com.google.android.gnd.ui.map.gms.GeoJsonSelectionState;
 
 import javax.inject.Inject;
 
 import io.reactivex.Single;
 
 import static com.google.android.gnd.rx.RxAutoDispose.autoDisposable;
+import static com.google.android.gnd.util.ImmutableSetCollector.toImmutableSet;
+import static java8.util.stream.StreamSupport.stream;
 
 /**
- * Allows the user to select specific areas on a map for offline display. Users can toggle sections of
- * the map to add or remove imagery. Upon selection, basemap tiles are queued for download. When 
+ * Allows the user to select specific areas on a map for offline display. Users can toggle sections
+ * of the map to add or remove imagery. Upon selection, basemap tiles are queued for download. When
  * deselected, they are removed from the device.
  */
 @ActivityScoped
@@ -50,6 +54,17 @@ public class BasemapSelectorFragment extends AbstractFragment {
 
   private void onMapReady(MapAdapter map) {
     map.renderJsonLayer();
+
+    viewModel
+        .getDownloadedAndPendingTiles()
+        .observe(
+            this,
+            tiles -> {
+              map.updateJsonSelections(
+                  stream(tiles).map(Tile::getId).collect(toImmutableSet()),
+                  GeoJsonSelectionState.SELECTED);
+            });
+    map.getGeoJsonFeatureClicks().as(autoDisposable(this)).subscribe(viewModel::updatePendingTiles);
   }
 
   @Override

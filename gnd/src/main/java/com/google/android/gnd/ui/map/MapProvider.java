@@ -17,10 +17,17 @@
 package com.google.android.gnd.ui.map;
 
 import android.annotation.SuppressLint;
+import android.util.Pair;
+
 import androidx.fragment.app.Fragment;
+
 import com.google.android.gnd.model.feature.Feature;
 import com.google.android.gnd.model.feature.Point;
+import com.google.android.gnd.ui.map.gms.GeoJsonSelectionState;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+
+
 import io.reactivex.Observable;
 import io.reactivex.Single;
 
@@ -38,11 +45,15 @@ public interface MapProvider {
    */
   interface MapAdapter {
 
+    void updateJsonSelections(ImmutableSet<String> featureUpdates, GeoJsonSelectionState selectionState);
+
     Observable<MapMarker> getMarkerClicks();
 
     Observable<Point> getDragInteractions();
 
     Observable<Point> getCameraPosition();
+
+    Observable<Pair<String, GeoJsonSelectionState>> getGeoJsonFeatureClicks();
 
     void enable();
 
