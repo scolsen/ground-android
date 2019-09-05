@@ -23,8 +23,6 @@ import androidx.fragment.app.Fragment;
 
 import com.google.android.gnd.model.feature.Feature;
 import com.google.android.gnd.model.feature.Point;
-import com.google.android.gnd.ui.map.gms.GeoJsonSelectionState;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 
 
@@ -39,21 +37,19 @@ public interface MapProvider {
 
   Single<MapAdapter> getMapAdapter();
 
+  Single<ExtentSelector> getExtentSelector();
+
   /**
    * Interface defining map interactions and events. This a separate class from {@link MapProvider}
    * so that it can be returned asynchronously by {@link MapProvider#getMapAdapter()} if necessary.
    */
   interface MapAdapter {
 
-    void updateJsonSelections(ImmutableSet<String> featureUpdates, GeoJsonSelectionState selectionState);
-
     Observable<MapMarker> getMarkerClicks();
 
     Observable<Point> getDragInteractions();
 
     Observable<Point> getCameraPosition();
-
-    Observable<Pair<String, GeoJsonSelectionState>> getGeoJsonFeatureClicks();
 
     void enable();
 
@@ -72,6 +68,6 @@ public interface MapProvider {
 
     void updateMarkers(ImmutableSet<Feature> features);
 
-    void renderJsonLayer();
+    void renderOfflineTiles();
   }
 }

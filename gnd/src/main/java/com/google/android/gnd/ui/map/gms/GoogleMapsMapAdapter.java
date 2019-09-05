@@ -24,6 +24,7 @@ import android.content.Context;
 import android.util.Log;
 import android.util.Pair;
 
+import com.cocoahero.android.gmaps.addons.mapbox.MapBoxOfflineTileProvider;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.UiSettings;
@@ -31,13 +32,16 @@ import com.google.android.gms.maps.model.BitmapDescriptor;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.TileOverlay;
+import com.google.android.gms.maps.model.TileOverlayOptions;
+import com.google.android.gms.maps.model.TileProvider;
 import com.google.android.gnd.model.feature.Feature;
 import com.google.android.gnd.model.feature.Point;
 import com.google.android.gnd.model.layer.FeatureType;
 import com.google.android.gnd.ui.MapIcon;
+import com.google.android.gnd.ui.map.ExtentSelector;
 import com.google.android.gnd.ui.map.MapMarker;
 import com.google.android.gnd.ui.map.MapProvider.MapAdapter;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.maps.android.data.geojson.GeoJsonFeature;
 import com.google.maps.android.data.geojson.GeoJsonLayer;
@@ -55,9 +59,11 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
 import java8.util.Optional;
@@ -67,7 +73,7 @@ import javax.annotation.Nullable;
  * Wrapper around {@link GoogleMap}, exposing Google Maps API functionality to Ground as a {@link
  * MapAdapter}.
  */
-class GoogleMapsMapAdapter implements MapAdapter {
+class GoogleMapsMapAdapter implements ExtentSelector {
 
   private static final String TAG = GoogleMapsMapAdapter.class.getSimpleName();
   private static final String GEO_JSON_FILE = "gnd-geojson.geojson";
@@ -80,12 +86,12 @@ class GoogleMapsMapAdapter implements MapAdapter {
    */
   private java.util.Map<String, Marker> markers = new HashMap<>();
 
-  private java.util.Set<GeoJsonFeature> selectedJsonFeatures = new HashSet<>();
+  private java.util.Set<String> selectedJsonFeatureIds = new HashSet<>();
 
   private final PublishSubject<MapMarker> markerClickSubject = PublishSubject.create();
   private final PublishSubject<Point> dragInteractionSubject = PublishSubject.create();
   private final BehaviorSubject<Point> cameraPositionSubject = BehaviorSubject.create();
-  private final PublishSubject<Pair<String, GeoJsonSelectionState>> selectedJsonFeaturesSubject =
+  private final PublishSubject<Pair<String, ExtentSelectionState>> selectedExtents =
       PublishSubject.create();
 
   @Nullable private LatLng cameraTargetBeforeDrag;
@@ -108,8 +114,25 @@ class GoogleMapsMapAdapter implements MapAdapter {
     onCameraMove();
   }
 
+  private void renderTileOverlay(File file) {
+    Log.d(TAG, "Rendering tile: " + file.getPath());
+
+    TileProvider provider = new MapBoxOfflineTileProvider(file);
+    TileOverlay overlay = map.addTileOverlay(new TileOverlayOptions().tileProvider(provider));
+  }
+
+  public void renderOfflineTiles() {
+    Log.d(TAG, "Loading offline tiles");
+
+    List<File> files = Arrays.asList(context.getFilesDir().listFiles());
+
+    stream(files)
+        .filter(file -> file.getPath().endsWith(".mbtiles"))
+        .forEach(this::renderTileOverlay);
+  }
+
   // TODO: Rename to reference tile extents?
-  public void renderJsonLayer() {
+  public void renderExtentSelectionLayer() {
     File file = new File(context.getFilesDir(), GEO_JSON_FILE);
 
     try {
@@ -125,7 +148,7 @@ class GoogleMapsMapAdapter implements MapAdapter {
       JSONObject geoJson = new JSONObject(sb.toString());
       this.jsonLayer = new GeoJsonLayer(map, geoJson);
       jsonLayer.addLayerToMap();
-      jsonLayer.setOnFeatureClickListener(this::onJsonFeatureClick);
+      jsonLayer.setOnFeatureClickListener(this::onExtentSelection);
       Log.d(TAG, "JSON layer successfully loaded");
 
     } catch (IOException | JSONException e) {
@@ -133,37 +156,45 @@ class GoogleMapsMapAdapter implements MapAdapter {
     }
   }
 
-  private void onJsonFeatureClick(com.google.maps.android.data.Feature feature) {
+  private void onExtentSelection(com.google.maps.android.data.Feature feature) {
     GeoJsonFeature geoJsonFeature = (GeoJsonFeature) feature;
+    String id = geoJsonFeature.getId();
 
-    if (selectedJsonFeatures.contains(geoJsonFeature)) {
-      // TODO: Update feature polygon styles.
-      selectedJsonFeatures.add(geoJsonFeature);
-      selectedJsonFeaturesSubject.onNext(
-          Pair.create(geoJsonFeature.getId(), GeoJsonSelectionState.UNSELECTED));
+    if (this.selectedJsonFeatureIds.contains(id)) {
+      // TODO: Create a style object to update polygon styles.
+      updateExtentSelectionState(geoJsonFeature, ExtentSelectionState.UNSELECTED);
     } else {
-      // TODO: Update feature polygon styles.
-      selectedJsonFeatures.remove(geoJsonFeature);
-      selectedJsonFeaturesSubject.onNext(
-          Pair.create(geoJsonFeature.getId(), GeoJsonSelectionState.SELECTED));
+      // TODO: Create a style object to update polygon styles.
+      updateExtentSelectionState(geoJsonFeature, ExtentSelectionState.SELECTED);
+    }
+  }
+
+  private void updateExtentSelectionState(
+      GeoJsonFeature geoJsonFeature, ExtentSelectionState selectionState) {
+    String id = geoJsonFeature.getId();
+
+    switch (selectionState) {
+      case SELECTED:
+        selectedJsonFeatureIds.add(id);
+        selectedExtents.onNext(Pair.create(id, selectionState));
+        break;
+      case UNSELECTED:
+        selectedJsonFeatureIds.remove(id);
+        selectedExtents.onNext(Pair.create(id, selectionState));
+        break;
+      default:
+        // Do nothing.
     }
   }
 
   @Override
-  public void updateJsonSelections(ImmutableSet<String> featureUpdates, GeoJsonSelectionState selectionState) {
-    Iterable<GeoJsonFeature> features = this.jsonLayer.getFeatures();
+  public void updateExtentSelections(
+      ImmutableSet<String> geoJsonFeatureIds, ExtentSelectionState selectionState) {
+    Iterable<GeoJsonFeature> extents = this.jsonLayer.getFeatures();
 
-    for (GeoJsonFeature feature : features) {
-      if (featureUpdates.contains(feature.getId())) {
-        // TODO: Update polygon styles for downloaded tiles
-        switch (selectionState) {
-          case SELECTED:
-            selectedJsonFeatures.add(feature);
-          case UNSELECTED:
-            selectedJsonFeatures.remove(feature);
-          default:
-            selectedJsonFeatures.add(feature);
-        }
+    for (GeoJsonFeature extent : extents) {
+      if (geoJsonFeatureIds.contains(extent.getId())) {
+        updateExtentSelectionState(extent, selectionState);
       }
     }
   }
@@ -195,8 +226,8 @@ class GoogleMapsMapAdapter implements MapAdapter {
   }
 
   @Override
-  public Observable<Pair<String, GeoJsonSelectionState>> getGeoJsonFeatureClicks() {
-    return selectedJsonFeaturesSubject;
+  public Observable<Pair<String, ExtentSelectionState>> getExtentSelections() {
+    return selectedExtents;
   }
 
   @Override
