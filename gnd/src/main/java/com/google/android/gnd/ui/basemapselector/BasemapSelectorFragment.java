@@ -16,9 +16,10 @@ import com.google.android.gnd.databinding.BasemapSelectorFragBinding;
 import com.google.android.gnd.inject.ActivityScoped;
 import com.google.android.gnd.model.basemap.tile.Tile;
 import com.google.android.gnd.ui.common.AbstractFragment;
+import com.google.android.gnd.ui.map.ExtentSelector;
 import com.google.android.gnd.ui.map.MapProvider;
 import com.google.android.gnd.ui.map.MapProvider.MapAdapter;
-import com.google.android.gnd.ui.map.gms.GeoJsonSelectionState;
+import com.google.android.gnd.ui.map.gms.ExtentSelectionState;
 
 import javax.inject.Inject;
 
@@ -48,23 +49,24 @@ public class BasemapSelectorFragment extends AbstractFragment {
     super.onCreate(savedInstanceState);
     viewModel = getViewModel(BasemapSelectorViewModel.class);
     mainViewModel = getViewModel(MainViewModel.class);
-    Single<MapAdapter> mapAdapter = mapProvider.getMapAdapter();
+    Single<ExtentSelector> mapAdapter = mapProvider.getExtentSelector();
     mapAdapter.as(autoDisposable(this)).subscribe(this::onMapReady);
   }
 
-  private void onMapReady(MapAdapter map) {
-    map.renderJsonLayer();
+  private void onMapReady(ExtentSelector map) {
+    map.renderExtentSelectionLayer();
+    map.renderOfflineTiles();
 
     viewModel
         .getDownloadedAndPendingTiles()
         .observe(
             this,
             tiles -> {
-              map.updateJsonSelections(
+              map.updateExtentSelections(
                   stream(tiles).map(Tile::getId).collect(toImmutableSet()),
-                  GeoJsonSelectionState.SELECTED);
+                  ExtentSelectionState.SELECTED);
             });
-    map.getGeoJsonFeatureClicks().as(autoDisposable(this)).subscribe(viewModel::updatePendingTiles);
+    map.getExtentSelections().as(autoDisposable(this)).subscribe(viewModel::updatePendingTiles);
   }
 
   @Override

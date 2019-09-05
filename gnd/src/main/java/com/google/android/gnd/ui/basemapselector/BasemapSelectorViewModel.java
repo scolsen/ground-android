@@ -10,10 +10,10 @@ import androidx.lifecycle.ViewModel;
 
 import com.google.android.gnd.model.basemap.tile.Tile;
 import com.google.android.gnd.repository.DataRepository;
-import com.google.android.gnd.ui.map.gms.GeoJsonSelectionState;
+import com.google.android.gnd.ui.map.gms.ExtentSelectionState;
+import com.google.android.gnd.workers.FileDownloadWorkManager;
 import com.google.common.collect.ImmutableSet;
 
-import java.util.HashMap;
 import java.util.HashSet;
 
 import javax.inject.Inject;
@@ -32,12 +32,14 @@ public class BasemapSelectorViewModel extends ViewModel {
   private static final String TAG = BasemapSelectorViewModel.class.getName();
   private final LiveData<ImmutableSet<Tile>> tiles;
   private final LiveData<ImmutableSet<Tile>> downloadedAndPendingTiles;
-  private HashMap<String, Tile> pendingTiles = new HashMap<>();
+  private HashSet<String> pendingTileIds = new HashSet<>();
   private final DataRepository dataRepository;
+  private final FileDownloadWorkManager downloadWorkManager;
 
   @Inject
-  BasemapSelectorViewModel(DataRepository dataRepository) {
+  BasemapSelectorViewModel(DataRepository dataRepository, FileDownloadWorkManager downloadWorkManager) {
     this.dataRepository = dataRepository;
+    this.downloadWorkManager = downloadWorkManager;
 
     this.tiles = LiveDataReactiveStreams.fromPublisher(dataRepository.getTilesOnceAndStream());
     this.downloadedAndPendingTiles =
@@ -58,25 +60,35 @@ public class BasemapSelectorViewModel extends ViewModel {
     return tiles;
   }
 
-  public void updatePendingTiles(Pair<String, GeoJsonSelectionState> geoJsonClick) {
+  public void updatePendingTiles(Pair<String, ExtentSelectionState> geoJsonClick) {
+    Log.d(TAG, "Click state:" + geoJsonClick.second);
+
     switch (geoJsonClick.second) {
       case SELECTED:
         Log.d(TAG, "Adding selected json feature: " + geoJsonClick.first);
-        pendingTiles.put(
-            geoJsonClick.first,
-            Tile.newBuilder()
-                .setId(geoJsonClick.first)
-                .setPath(geoJsonClick.first + ".geojson")
-                .setState(Tile.State.PENDING)
-                .build());
+        pendingTileIds.add(geoJsonClick.first);
+        downloadTiles();
+        break;
       case UNSELECTED:
         Log.d(TAG, "Removing unselected json feature: " + geoJsonClick.first);
-        pendingTiles.remove(geoJsonClick.first);
+        pendingTileIds.remove(geoJsonClick.first);
+        break;
+      default:
     }
   }
 
   public LiveData<ImmutableSet<Tile>> getDownloadedAndPendingTiles() {
     return downloadedAndPendingTiles;
+  }
+
+  /**
+   * Download selected tiles.
+   */
+  private void downloadTiles() {
+    for (String tileId : pendingTileIds) {
+      Log.d(TAG, "Downloading: " + tileId);
+      downloadWorkManager.enqueueFileDownloadWorker(tileId).subscribe(() -> Log.d(TAG, "worker complete"));
+    }
   }
   // TODO: Implement view model.
 }
