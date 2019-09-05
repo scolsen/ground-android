@@ -17,6 +17,17 @@ public abstract class Tile {
 
     public static Builder newBuilder() {return new AutoValue_Tile.Builder();}
 
+    public static String pathFromId(String tileId) {
+    // Tile ids are stored as x-y-z. Paths must be z-x-y.mbtiles.
+    // TODO: Convert tile ids to paths in a less restrictive and less hacky manner.
+    String[] fields = tileId.replaceAll("[()]", "").split(", ");
+    String filename = fields[2] + "-" + fields[0] + "-" + fields[1];
+
+    return filename + ".mbtiles";
+  }
+
+    public abstract Builder toBuilder();
+
     @AutoValue.Builder
     public abstract static class Builder {
         public abstract Builder setId(String id);

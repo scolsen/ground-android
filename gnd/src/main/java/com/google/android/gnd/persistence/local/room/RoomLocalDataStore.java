@@ -116,6 +116,16 @@ public class RoomLocalDataStore implements LocalDataStore {
   }
 
   @Override
+  public Completable insertOrUpdateTile(Tile tile) {
+    return db.tileDao().insertOrUpdate(TileEntity.fromTile(tile));
+  }
+
+  @Override
+  public Maybe<Tile> getTile(String tileId) {
+    return db.tileDao().findById(tileId).map(TileEntity::toTile);
+  }
+
+  @Override
   public Single<ImmutableList<Mutation>> getPendingMutations(String featureId) {
     return db.featureMutationDao()
         .findByFeatureId(featureId)

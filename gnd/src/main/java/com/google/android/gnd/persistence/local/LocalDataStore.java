@@ -105,4 +105,8 @@ public interface LocalDataStore {
    * instance.
    */
   Completable mergeRecord(Record record);
+
+  Completable insertOrUpdateTile(Tile tile);
+
+  Maybe<Tile> getTile(String tileId);
 }
