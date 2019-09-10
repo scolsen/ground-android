@@ -83,7 +83,7 @@ public class BasemapSelectorViewModel extends ViewModel {
         break;
       case PENDING_DOWNLOAD:
         downloadWorkManager
-            .enqueueFileDownloadWorker(extent.getId())
+            .enqueueFileDownloadWorker(extent.getId(), extent.getUrl())
             .subscribe(() -> Log.d(TAG, "Download worker queued"));
         break;
       default:

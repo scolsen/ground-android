@@ -37,7 +37,7 @@ import androidx.room.TypeConverters;
       TileEntity.class
     },
     // TODO(#128): Reset version to 1 before releasing.
-    version = 15,
+    version = 16,
     exportSchema = false)
 @TypeConverters({
   MutationEntityType.class,

@@ -47,6 +47,7 @@ import java8.util.Optional;
 public class FileDownloadWorker extends Worker {
   private static final String TAG = FileDownloadWorker.class.getSimpleName();
 
+  private static final String TILE_URL = "tile_url";
   private static final String TILE_ID = "tile_id";
   private static final int BUFFER_SIZE = 4096;
   private static final String URL_BASE_PATH =
@@ -54,6 +55,7 @@ public class FileDownloadWorker extends Worker {
 
   private final Context context;
   private final LocalDataStore localDataStore;
+  private final String tileUrl;
   private final String tileId;
 
   public FileDownloadWorker(
@@ -61,23 +63,16 @@ public class FileDownloadWorker extends Worker {
     super(context, params);
     this.context = context;
     this.localDataStore = localDataStore;
+    this.tileUrl = params.getInputData().getString(TILE_URL);
     this.tileId = params.getInputData().getString(TILE_ID);
   }
 
   /** Creates input data for the FileDownloadWorker. */
-  public static Data createInputData(String tilePrimaryKey) {
-    return new Data.Builder().putString(TILE_ID, tilePrimaryKey).build();
-  }
-
-  /**
-   * Returns a url from which a tile can be downloaded.
-   *
-   * @param tile
-   * @return tile url
-   * @throws MalformedURLException
-   */
-  private URL tileUrl(Tile tile) throws MalformedURLException {
-    return new URL(URL_BASE_PATH + tile.getPath());
+  public static Data createInputData(String tilePrimaryKey, String tileUrl) {
+    return new Data.Builder()
+        .putString(TILE_URL, tileUrl)
+        .putString(TILE_ID, tilePrimaryKey)
+        .build();
   }
 
   /**
@@ -90,7 +85,7 @@ public class FileDownloadWorker extends Worker {
    */
   private Result downloadTileFile(Tile tile, Optional<HashMap<String, String>> requestProperties) {
     try {
-      URL url = tileUrl(tile);
+      URL url = new URL(tileUrl);
       HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
       if (requestProperties.isPresent()) {
@@ -197,6 +192,7 @@ public class FileDownloadWorker extends Worker {
               .setId(tileId)
               .setState(Tile.State.PENDING)
               .setPath(Tile.pathFromId(tileId))
+              .setUrl(tileUrl)
               .build();
     }
 

@@ -75,7 +75,8 @@ public class BasemapSelectorMapAdapter implements ExtentSelector {
 
   @Override
   public void renderExtentSelectionLayer() {
-    int geoJsonResourceId = context.getResources().getIdentifier("gnd_geojson", "raw", context.getPackageName());
+    int geoJsonResourceId =
+        context.getResources().getIdentifier("gnd_geojson", "raw", context.getPackageName());
 
     try {
       InputStream is = context.getResources().openRawResource(geoJsonResourceId);
@@ -99,7 +100,11 @@ public class BasemapSelectorMapAdapter implements ExtentSelector {
       for (GeoJsonFeature feature : this.geoJsonFeatures) {
         availableExtents.put(
             feature.getId(),
-            Extent.newBuilder().setId(feature.getId()).setState(Extent.State.NONE).build());
+            Extent.newBuilder()
+                .setId(feature.getId())
+                .setState(Extent.State.NONE)
+                .setUrl(feature.getProperty("title"))
+                .build());
       }
 
       Log.d(TAG, "Extent selection layer successfully loaded");
@@ -185,7 +190,8 @@ public class BasemapSelectorMapAdapter implements ExtentSelector {
     // TODO: Refactor repetitive extent building.
     switch (extent.getState()) {
       case DOWNLOADED:
-        updateExtentSelectionState(extent.toBuilder().setState(Extent.State.PENDING_REMOVAL).build());
+        updateExtentSelectionState(
+            extent.toBuilder().setState(Extent.State.PENDING_REMOVAL).build());
         updateExtentStyle(extent.toBuilder().setState(Extent.State.PENDING_REMOVAL).build());
         break;
       case PENDING_DOWNLOAD:

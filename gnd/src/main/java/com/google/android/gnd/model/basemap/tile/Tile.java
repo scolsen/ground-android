@@ -4,6 +4,7 @@ import com.google.auto.value.AutoValue;
 
 @AutoValue
 public abstract class Tile {
+
   public enum State {
     PENDING,
     IN_PROGRESS,
@@ -15,6 +16,8 @@ public abstract class Tile {
   public abstract String getId();
 
   public abstract String getPath();
+
+  public abstract String getUrl();
 
   public abstract State getState();
 
@@ -41,6 +44,8 @@ public abstract class Tile {
     public abstract Builder setId(String id);
 
     public abstract Builder setPath(String path);
+
+    public abstract Builder setUrl(String url);
 
     public abstract Builder setState(State state);
 

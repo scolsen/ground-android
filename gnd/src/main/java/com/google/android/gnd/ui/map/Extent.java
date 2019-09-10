@@ -21,6 +21,8 @@ public abstract class Extent {
 
   public abstract State getState();
 
+  public abstract String getUrl();
+
   public static Builder newBuilder() {
     return new AutoValue_Extent.Builder();
   }
@@ -45,7 +47,7 @@ public abstract class Extent {
   }
 
   public static Extent fromTile(Tile tile) {
-    return Extent.newBuilder().setId(tile.getId()).setState(toExtentState(tile.getState())).build();
+    return Extent.newBuilder().setId(tile.getId()).setState(toExtentState(tile.getState())).setUrl(tile.getUrl()).build();
   }
 
   @AutoValue.Builder
@@ -53,6 +55,8 @@ public abstract class Extent {
     public abstract Builder setId(String id);
 
     public abstract Builder setState(State state);
+
+    public abstract Builder setUrl(String url);
 
     public abstract Extent build();
   }
