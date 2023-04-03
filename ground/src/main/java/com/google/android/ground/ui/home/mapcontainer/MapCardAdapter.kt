@@ -98,8 +98,9 @@ class MapCardAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
   fun focusItemAtIndex(newIndex: Int) {
     if (newIndex < 0 || newIndex >= itemCount || focusedIndex == newIndex) return
 
+    notifyItemChanged(focusedIndex)
     focusedIndex = newIndex
-    notifyDataSetChanged()
+    notifyItemChanged(focusedIndex)
   }
 
   /** Overwrites existing cards. */
